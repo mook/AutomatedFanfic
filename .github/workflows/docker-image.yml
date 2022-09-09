@@ -7,46 +7,51 @@ on:
       - 'master'
     paths:
       - 'release-versions/latest.txt'
-env:
-  IMAGE_REPO: mrtyton
-  IMAGE_NAME: automated-ffdl
-  
+
 jobs:
-  Push-New-Release-Version-Image:
+  publish:
+    name: Push new release version image
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v2
 
-      - name: Get environment variables
-        uses: FranzDiebold/github-env-vars-action@v2
-
-      - name: Set version
+      - name: Set environment
         run: |
+          cat >>"${GITHUB_ENV}" <<-EOF
           RELEASE_VERSION=$(cat release-versions/latest.txt)
-          echo "RELEASE_VERSION=latest" >> $GITHUB_ENV
           CALIBRE_VERSION=$(cat release-versions/calibre.txt)
-          echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           FFF_VERSION=$(cat release-versions/fff.txt)
-          echo "FFF_VERSION=$FFF_VERSION" >> $GITHUB_ENV
+          REF=${REF}
+          REPO=${REPO,,}
+          EOF
+        env:
+          REF: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+
       - name: Print image tag
         run: |
-          echo "Branch: $CI_ACTION_REF_NAME"
-          echo "Release Version: ${{ env.RELEASE_VERSION }}"
-          echo "Calibre Version: ${{ env.CALIBRE_VERSION }}"
-          echo "FFF Version: ${{ env.FFF_VERSION }}"
+          echo "Branch: ${REF}"
+          echo "Release Version: ${RELEASE_VERSION}"
+          echo "Calibre Version: ${CALIBRE_VERSION}"
+          echo "FFF Version: ${FFF_VERSION}"
           
-      - name: Login to DockerHub
-        uses: docker/login-action@v1
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USER }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Build and push
         uses: docker/build-push-action@v2
@@ -55,5 +60,8 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.RELEASE_VERSION }}
-          build-args: VERSION=${{env.RELEASE_VERSION}},CALIBRE_RELEASE=${{env.CALIBRE_VERSION}},FFF_RELEASE=${{env.FFF_VERSION}}
+          tags: ghcr.io/${{ env.REPO }}:${{ env.RELEASE_VERSION }}
+          build-args: |
+            VERSION=${{ env.RELEASE_VERSION }}
+            CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
+            FFF_RELEASE=${{ env.FFF_VERSION }}
